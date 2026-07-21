@@ -118,6 +118,7 @@ svg{display:block;width:100%;height:auto}
 <div id="pages">
   <div class="page active" id="p-resumen"></div>
   <div class="page" id="p-canales"></div>
+  <div class="page" id="p-gestion"></div>
   <div class="page" id="p-vendedores"></div>
   <div class="page" id="p-modelos"></div>
 </div>
@@ -125,6 +126,7 @@ svg{display:block;width:100%;height:auto}
 <nav>
   <button class="active" data-p="p-resumen"><span class="icon">📊</span>Resumen</button>
   <button data-p="p-canales"><span class="icon">📣</span>Canales</button>
+  <button data-p="p-gestion"><span class="icon">📞</span>Gestión</button>
   <button data-p="p-vendedores"><span class="icon">🧑‍💼</span>Vendedores</button>
   <button data-p="p-modelos"><span class="icon">🚗</span>Modelos</button>
 </nav>
@@ -137,7 +139,7 @@ const MESES=['','Enero','Febrero','Marzo','Abril','Mayo','Junio','Julio','Agosto
 const HEX={blue:'#38bdf8',teal:'#2dd4bf',purple:'#a78bfa',orange:'#f97316',green:'#22c55e',yellow:'#facc15',red:'#ef4444'};
 const PAL=['blue','teal','purple','orange','green','yellow','red'];
 const NBASE=3;
-let REC=[], MLIST=[], mesesSet={}, GEN='';
+let REC=[], MLIST=[], mesesSet={}, GEN='', GESTION={};
 
 const nf=n=>Math.round(n).toLocaleString('es-CL');
 const pct=(a,b)=>b?Math.round(a/b*100):0;
@@ -215,6 +217,38 @@ function rankRows(mapCur,mapBase){
 }
 function kpi(cls,lbl,val,cmp){return '<div class="kpi '+cls+'"><div class="kpi-lbl">'+lbl+'</div><div class="kpi-val">'+val+'</div>'+(cmp||'')+'</div>';}
 
+// delta para métricas de gestión (goodUp: true/false = colorea, null = neutro)
+function deltaPill(cur,avg,goodUp,fmtD){
+  if(avg==null) return '<span class="chg cmp-flat">—</span>';
+  const diff=cur-avg, txt=fmtD(Math.abs(diff)), flat=(goodUp===null?false:(parseFloat(txt)===0)), up=diff>0;
+  const cls=(goodUp===null||flat)?'cmp-flat':((up===goodUp)?'cmp-up':'cmp-down'), ar=(Math.abs(diff)<1e-9||(goodUp!==null&&flat))?'▬':(up?'▲':'▼');
+  return '<span class="chg '+cls+'">'+ar+(Math.abs(diff)<1e-9?'':(up?'+':'−'))+txt+'</span>';
+}
+function renderGestion(mk){
+  const el=document.getElementById('p-gestion'), g=GESTION[mk];
+  if(!g){el.innerHTML='<div class="card"><div style="font-size:.78rem;color:var(--muted)">Sin datos de gestión para este mes.</div></div>';return;}
+  const sucs=Object.keys(g.sucursales);
+  const idx=MLIST.indexOf(mk), previos=MLIST.slice(Math.max(0,idx-NBASE),idx).filter(p=>GESTION[p]);
+  const avgM=(suc,key)=>{if(!previos.length)return null;let s=0,n=0;previos.forEach(p=>{const v=GESTION[p].sucursales[suc];if(v){s+=v[key];n++;}});return n?s/n:null;};
+  const asideCmp=previos.length?'vs '+previos.length+' m. ant.':'';
+  const card=(key,titulo,fmtV,fmtD,goodUp)=>{
+    const rows=sucs.map(s=>({s,v:g.sucursales[s][key]})).sort((a,b)=>b.v-a.v);
+    const max=Math.max(1,...rows.map(r=>r.v));
+    const body=rows.map((r,i)=>{const c=PAL[i%PAL.length];
+      return '<div class="cmp-row"><span class="dot" style="background:'+HEX[c]+'"></span><span class="nm">'+esc(r.s)+'</span><div class="mini-bar"><i style="width:'+pct(r.v,max)+'%;background:'+HEX[c]+'"></i></div><span class="pr">'+fmtV(r.v)+'</span>'+deltaPill(r.v,avgM(r.s,key),goodUp,fmtD)+'</div>';}).join('');
+    return '<div class="card"><div class="card-title">'+titulo+' <span class="aside">'+asideCmp+'</span></div>'+body+'</div>';
+  };
+  const r0=v=>Math.round(v);
+  el.innerHTML=
+    '<div class="card" style="background:#0d2137;border-color:#1e3a5f"><div style="font-size:.72rem;color:var(--sub);line-height:1.5">Indicadores oficiales de <strong style="color:var(--teal)">gestión de contacto</strong> por sucursal (fuente: Reportería MSSV). <em style="color:var(--muted)">El sistema no expone el tiempo hasta el primer contacto; “Duración de llamada” es el largo promedio de cada llamado.</em></div></div>'+
+    card('durProm','Duración promedio de llamada',v=>r0(v)+'s',d=>Math.round(d)+'s',null)+
+    card('pctContact','% Contactado',v=>r0(v)+'%',d=>Math.round(d),true)+
+    card('intentos','Intentos de contacto · por lead',v=>v.toFixed(1),d=>d.toFixed(1),null)+
+    card('llamProm','Llamadas por lead',v=>v.toFixed(2),d=>d.toFixed(2),null)+
+    card('pctSinGest','% Sin gestión',v=>(Math.round(v*10)/10)+'%',d=>Math.round(d*10)/10,false)+
+    '<div class="stamp">Período: '+nombreMes(mk)+' (días 1–'+g.corteDia+') · Datos al '+(GEN||'—')+'</div>';
+}
+
 function render(mk){
   const D=mesesSet[mk], cur=stats(delMes(mk,D)), base=baseline(mk,D), corte='días 1–'+D;
   const diff=base.n?cur.total-base.total:0, up=diff>0, p=base.n?Math.round(Math.abs(diff)/base.total*100):0, flat=base.n&&p===0;
@@ -240,6 +274,9 @@ function render(mk){
     '<div class="card"><div class="card-title">Leads por origen <span class="aside">vs '+(base.n?base.n+' m. ant.':'—')+'</span></div>'+barRows(cur.origen,base.n?base.origen:null,true)+'</div>'+
     '<div class="card"><div class="card-title">Leads por sucursal <span class="aside">vs '+(base.n?base.n+' m. ant.':'—')+'</span></div>'+barRows(cur.sucursal,base.n?base.sucursal:null,true)+'</div>';
 
+  // ===== GESTIÓN (indicadores de contacto por sucursal) =====
+  renderGestion(mk,base);
+
   const vendRows=Object.entries(cur.vendedor).filter(([nm])=>nm!=='(sin asignar)').sort((a,b)=>b[1]-a[1]);
   const maxV=Math.max(1,...vendRows.map(r=>r[1])), totV=vendRows.reduce((s,r)=>s+r[1],0);
   const vendHTML=vendRows.map(([nm,n],i)=>{const g=i<3?' g'+(i+1):'', cierres=cur.ganaVend[nm]||0;
@@ -256,7 +293,7 @@ function render(mk){
 
 // ---- carga de datos ----
 function aplicarDatos(data){
-  REC=data.records||[];
+  REC=data.records||[];GESTION=data.gestion||{};
   mesesSet={};REC.forEach(r=>{mesesSet[r.m]=Math.max(mesesSet[r.m]||0,r.d);});
   MLIST=Object.keys(mesesSet).sort();
   GEN=data.generado?new Date(data.generado).toLocaleString('es-CL',{day:'2-digit',month:'2-digit',hour:'2-digit',minute:'2-digit'}):'';

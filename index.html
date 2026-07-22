@@ -341,6 +341,13 @@ async function iniciar(){
 if(sessionStorage.getItem('kia_ok')==='1'){document.getElementById('login').style.display='none';iniciar();}
 else{document.getElementById('pin').focus();}
 
-if('serviceWorker' in navigator){window.addEventListener('load',()=>navigator.serviceWorker.register('sw.js').catch(()=>{}));}
+if('serviceWorker' in navigator){
+  let recargando=false;
+  navigator.serviceWorker.addEventListener('controllerchange',()=>{ if(recargando)return; recargando=true; location.reload(); });
+  window.addEventListener('load',()=>navigator.serviceWorker.register('sw.js').then(reg=>{
+    reg.addEventListener('updatefound',()=>{ const nw=reg.installing; if(!nw)return; nw.addEventListener('statechange',()=>{ if(nw.state==='installed'&&navigator.serviceWorker.controller){ nw.postMessage&&nw.postMessage('skip'); } }); });
+    setInterval(()=>reg.update().catch(()=>{}),60000); // busca versión nueva cada minuto
+  }).catch(()=>{}));
+}
 </script>
 </body></html>

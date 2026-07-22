@@ -1,7 +1,8 @@
 /* Service Worker — instala la app y la deja usable sin conexión.
-   Shell: cache-first. data.json: network-first (siempre intenta lo
-   más nuevo; si no hay red, sirve la última copia cacheada). */
-const CACHE = 'kia-leads-v1';
+   Estrategia network-first para TODO (shell + datos): siempre intenta
+   traer lo más nuevo; si no hay red, sirve la última copia cacheada.
+   Al subir el número de versión (v2, v3, ...) se purga la caché vieja. */
+const CACHE = 'kia-leads-v2';
 const SHELL = ['index.html', 'manifest.json', 'icon-192.png', 'icon-512.png'];
 
 self.addEventListener('install', e => {
@@ -13,17 +14,13 @@ self.addEventListener('activate', e => {
 self.addEventListener('fetch', e => {
   const req = e.request;
   if (req.method !== 'GET' || new URL(req.url).origin !== self.location.origin) return;
-  const esDatos = req.url.includes('data.json');
-  if (esDatos) {
-    // network-first para los datos
-    e.respondWith(
-      fetch(req).then(res => { const copy = res.clone(); caches.open(CACHE).then(c => c.put('data.json', copy)).catch(() => {}); return res; })
-        .catch(() => caches.match('data.json'))
-    );
-  } else {
-    // cache-first para el shell
-    e.respondWith(
-      caches.match(req).then(r => r || fetch(req).then(res => { const copy = res.clone(); caches.open(CACHE).then(c => c.put(req, copy)).catch(() => {}); return res; }).catch(() => caches.match('index.html')))
-    );
-  }
+  // network-first: intenta red, cachea la respuesta y, si falla, usa caché
+  e.respondWith(
+    fetch(req).then(res => {
+      const copy = res.clone();
+      const key = req.url.includes('data.json') ? 'data.json' : req;
+      caches.open(CACHE).then(c => c.put(key, copy)).catch(() => {});
+      return res;
+    }).catch(() => caches.match(req).then(r => r || caches.match('index.html')))
+  );
 });
